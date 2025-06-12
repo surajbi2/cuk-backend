@@ -1,7 +1,12 @@
 // Survey controller implementation
 import db from '../config/db.js';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 import path from 'path';
 import fs from 'fs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 export const uploadSurvey = async (req, res) => {
     try {
@@ -17,18 +22,21 @@ export const uploadSurvey = async (req, res) => {
             return res.status(403).json({ message: 'Admin access required' });
         }
 
-        if (!req.file) {
-            return res.status(400).json({ message: 'No file uploaded' });
-        }
-
         const { title, year } = req.body;
         
         if (!title || !year) {
             return res.status(400).json({ message: 'Title and year are required' });
         }
 
+        if (!req.file) {
+            return res.status(400).json({ message: 'No file uploaded' });
+        }
+
+        // Use path.resolve instead of path.join for absolute paths
         const relativePath = path.join('uploads', req.file.filename);
-        const absolutePath = path.join(__dirname, '..', relativePath);
+        const absolutePath = path.resolve(__dirname, '..', relativePath);
+        
+        console.log('File path:', absolutePath);
         
         // Verify file was created
         if (!fs.existsSync(absolutePath)) {
@@ -36,8 +44,7 @@ export const uploadSurvey = async (req, res) => {
             return res.status(500).json({ message: 'Failed to save file' });
         }
 
-        // Insert survey record into database with pending status (2)
-        console.log('Inserting survey into database:', { title, year, relativePath, mimetype: req.file.mimetype });
+        // Insert survey record into database
         const [result] = await db.query(
             'INSERT INTO surveys (title, year, file_path, upload_date, file_mimetype, status) VALUES (?, ?, ?, NOW(), ?, 2)',
             [title, year, relativePath, req.file.mimetype]
@@ -50,7 +57,7 @@ export const uploadSurvey = async (req, res) => {
 
     } catch (error) {
         console.error('Error uploading survey:', error);
-        res.status(500).json({ message: 'Error uploading survey: ' + error.message });
+        res.status(500).json({ message: 'Error uploading survey' });
     }
 };
 

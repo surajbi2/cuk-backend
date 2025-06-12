@@ -1,0 +1,159 @@
+// Survey controller implementation
+import db from '../config/db.js';
+import path from 'path';
+import fs from 'fs';
+
+export const uploadSurvey = async (req, res) => {
+    try {
+        console.log('uploadSurvey called with:', {
+            body: req.body,
+            file: req.file,
+            user: req.user
+        });
+
+        // Check if user is admin
+        if (req.user.role !== 'admin') {
+            console.log('Access denied: User is not admin');
+            return res.status(403).json({ message: 'Admin access required' });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ message: 'No file uploaded' });
+        }
+
+        const { title, year } = req.body;
+        
+        if (!title || !year) {
+            return res.status(400).json({ message: 'Title and year are required' });
+        }
+
+        const relativePath = path.join('uploads', req.file.filename);
+        const absolutePath = path.join(__dirname, '..', relativePath);
+        
+        // Verify file was created
+        if (!fs.existsSync(absolutePath)) {
+            console.error('File not saved correctly');
+            return res.status(500).json({ message: 'Failed to save file' });
+        }
+
+        // Insert survey record into database with pending status (2)
+        console.log('Inserting survey into database:', { title, year, relativePath, mimetype: req.file.mimetype });
+        const [result] = await db.query(
+            'INSERT INTO surveys (title, year, file_path, upload_date, file_mimetype, status) VALUES (?, ?, ?, NOW(), ?, 2)',
+            [title, year, relativePath, req.file.mimetype]
+        );
+
+        res.status(201).json({ 
+            message: 'Survey uploaded successfully',
+            id: result.insertId
+        });
+
+    } catch (error) {
+        console.error('Error uploading survey:', error);
+        res.status(500).json({ message: 'Error uploading survey: ' + error.message });
+    }
+};
+
+export const getAllSurveys = async (req, res) => {
+    try {
+        console.log('Fetching all surveys');
+        const [surveys] = await db.query(
+            'SELECT id, title, year, file_path, file_mimetype, upload_date FROM surveys WHERE status = 1 ORDER BY year DESC'
+        );
+        console.log('Found surveys:', surveys);
+
+        const formattedSurveys = surveys.map(survey => ({
+            id: survey.id,
+            type: 'SSS',
+            year: survey.year,
+            description: survey.title,
+            link: `/api/surveys/file/${survey.id}`,
+            downloadLink: `/api/surveys/download/${survey.id}`,
+            uploadDate: survey.upload_date
+        }));
+
+        console.log('Formatted surveys:', formattedSurveys);
+        res.json(formattedSurveys);
+
+    } catch (error) {
+        console.error('Error fetching surveys:', error);
+        res.status(500).json({ message: 'Error fetching surveys: ' + error.message });
+    }
+};
+
+export const serveSurveyFile = async (req, res) => {
+    try {
+        const { id } = req.params;
+        console.log('Serving survey file for id:', id);
+
+        const [surveys] = await db.query(
+            'SELECT title, file_path, file_mimetype FROM surveys WHERE id = ? AND status = 1',
+            [id]
+        );
+
+        if (surveys.length === 0) {
+            return res.status(404).json({ message: 'Survey not found' });
+        }
+
+        const survey = surveys[0];
+        const filePath = path.join(__dirname, '..', survey.file_path);
+
+        // Check if file exists
+        if (!fs.existsSync(filePath)) {
+            console.error(`File not found: ${filePath}`);
+            return res.status(404).json({ message: 'File not found on server' });
+        }
+
+        // Set appropriate headers for viewing
+        res.setHeader('Content-Type', survey.file_mimetype);
+        
+        // Send file for viewing (inline)
+        res.sendFile(filePath);
+
+    } catch (error) {
+        console.error('Error serving survey:', error);
+        res.status(500).json({ message: 'Error serving survey file' });
+    }
+};
+
+export const downloadSurvey = async (req, res) => {
+    try {
+        const { id } = req.params;
+        console.log('Downloading survey:', id);
+
+        // Get survey file info from database
+        const [surveys] = await db.query(
+            'SELECT title, file_path, file_mimetype FROM surveys WHERE id = ? AND status = 1',
+            [id]
+        );
+
+        if (surveys.length === 0) {
+            return res.status(404).json({ message: 'Survey not found' });
+        }
+
+        const survey = surveys[0];
+        const filePath = path.join(__dirname, '..', survey.file_path);
+
+        // Check if file exists
+        if (!fs.existsSync(filePath)) {
+            console.error(`File not found: ${filePath}`);
+            return res.status(404).json({ message: 'File not found on server' });
+        }
+
+        // Create sanitized filename
+        const safeTitle = survey.title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        const downloadFilename = `${safeTitle}.pdf`;
+
+        // Set headers for file download
+        res.setHeader('Content-Type', survey.file_mimetype);
+        res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
+
+        // Stream the file
+        const fileStream = fs.createReadStream(filePath);
+        fileStream.pipe(res);
+
+    } catch (error) {
+        console.error('Error downloading survey:', error);
+        res.status(500).json({ message: 'Error downloading survey' });
+    }
+};

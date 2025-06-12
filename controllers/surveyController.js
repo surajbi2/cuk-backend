@@ -65,7 +65,7 @@ export const getAllSurveys = async (req, res) => {
     try {
         console.log('Fetching all surveys');
         const [surveys] = await db.query(
-            'SELECT id, title, year, file_path, file_mimetype, upload_date FROM surveys WHERE status = 1 ORDER BY year DESC'
+            'SELECT id, title, year, file_path, file_mimetype, upload_date FROM surveys WHERE status = 2 ORDER BY year DESC'
         );
         console.log('Found surveys:', surveys);
 

@@ -8,49 +8,83 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export const uploadFile = async (req, res) => {
-    const { title, eventDate } = req.body;
-    const file = req.file;
-    
-    console.log("Incoming file upload request:", { title, eventDate });
-    console.log("File info:", file ? { 
-        filename: file.filename,
-        originalname: file.originalname,
-        mimetype: file.mimetype,
-        size: file.size
-    } : 'No file');
-
-    if (!file) {
-        console.error('No file uploaded');
-        return res.status(400).json({ message: 'No file uploaded' });
-    }
-
-    if (!title || !eventDate) {
-        console.error('Missing required fields');
-        return res.status(400).json({ message: 'Title and date are required' });
-    }
-
     try {
-        // Store the relative path to avoid full system path exposure
-        const relativePath = path.join('uploads', file.filename);
-        const absolutePath = path.join(__dirname, '..', relativePath);
+        console.log('Upload request headers:', req.headers);
+        const { title, eventDate } = req.body;
+        const file = req.file;
         
+        console.log("Incoming file upload request:", { 
+            title, 
+            eventDate,
+            body: req.body,
+            file: file ? {
+                filename: file.filename,
+                originalname: file.originalname,
+                mimetype: file.mimetype,
+                size: file.size,
+                path: file.path
+            } : 'No file'
+        });
+
+        if (!file) {
+            console.error('No file uploaded');
+            return res.status(400).json({ message: 'No file uploaded' });
+        }
+
+        if (!title || !eventDate) {
+            console.error('Missing required fields:', { title, eventDate });
+            return res.status(400).json({ message: 'Title and date are required' });
+        }
+
+        // Store the relative path to avoid full system path exposure
+        const uploadDir = getUploadDirectory();
+        const relativePath = path.join('uploads', file.filename);
+        const absolutePath = path.join(uploadDir, file.filename);
+        
+        console.log('File paths:', {
+            uploadDir,
+            relativePath,
+            absolutePath,
+            exists: fs.existsSync(absolutePath)
+        });
+
         // Verify file was created
         if (!fs.existsSync(absolutePath)) {
-            console.error('File not saved correctly');
-            return res.status(500).json({ message: 'Failed to save file' });
+            console.error('File not saved correctly at:', absolutePath);
+            return res.status(500).json({ 
+                message: 'Failed to save file',
+                details: {
+                    path: absolutePath,
+                    uploadDir,
+                    relativePath
+                }
+            });
         }
 
         // Insert record into database
-        await db.query(
+        const [result] = await db.query(
             `INSERT INTO notices (title, event_date, file_name, file_mimetype, file_path, status) 
              VALUES (?, ?, ?, ?, ?, ?)`, 
             [title, eventDate, file.originalname, file.mimetype, relativePath, 2]
         );
 
-        res.status(201).json({ message: 'Notice submitted for admin approval.' });
+        console.log('Database insert result:', result);
+
+        res.status(201).json({ 
+            message: 'Notice submitted for admin approval.',
+            fileInfo: {
+                id: result.insertId,
+                title,
+                eventDate,
+                filename: file.originalname
+            }
+        });
     } catch (err) {
-        console.error('Error inserting file info:', err);
-        res.status(500).json({ message: 'Server error while processing upload' });
+        console.error('Error in uploadFile:', err);
+        res.status(500).json({ 
+            message: 'Server error while processing upload',
+            error: err.message
+        });
     }
 };
 

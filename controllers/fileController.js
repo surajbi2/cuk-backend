@@ -99,28 +99,41 @@ export const deleteNotice = async (req, res) => {
 export const serveFile = async (req, res) => {
     try {
         const { id } = req.params;
+        console.log('Serving file for ID:', id);
+        
         const [rows] = await db.query(
             'SELECT file_name, file_mimetype, file_path FROM notices WHERE id = ?', 
             [id]
         );
 
         if (rows.length === 0) {
+            console.log('No file found in database for ID:', id);
             return res.status(404).json({ message: 'File not found' });
         }
 
         const file = rows[0];
-        const filePath = path.join(__dirname, '..', file.file_path);
+        console.log('File record found:', file);
+        
+        const absolutePath = path.resolve(__dirname, '..', file.file_path);
+        console.log('Resolved absolute path:', absolutePath);
 
-        if (!fs.existsSync(filePath)) {
-            console.error(`File not found: ${filePath}`);
+        if (!fs.existsSync(absolutePath)) {
+            console.error(`File not found at path: ${absolutePath}`);
             return res.status(404).json({ message: 'File not found on server' });
         }
 
         // Set appropriate headers based on file type
         res.setHeader('Content-Type', file.file_mimetype);
+        res.setHeader('Content-Disposition', `inline; filename="${file.file_name}"`);
         
-        // Send file for viewing (inline)
-        res.sendFile(filePath);
+        // Stream the file instead of using sendFile
+        const fileStream = fs.createReadStream(absolutePath);
+        fileStream.pipe(res);
+
+        fileStream.on('error', (error) => {
+            console.error('Error streaming file:', error);
+            res.status(500).json({ message: 'Error streaming file' });
+        });
     } catch (err) {
         console.error('Error retrieving file:', err);
         res.status(500).json({ message: 'Server error while retrieving file' });
@@ -131,21 +144,28 @@ export const serveFile = async (req, res) => {
 export const downloadFile = async (req, res) => {
     try {
         const { id } = req.params;
-          // Get file info from database
+        console.log('Downloading file for ID:', id);
+          
+        // Get file info from database
         const [files] = await db.query(
             'SELECT file_name, file_path, file_mimetype, title FROM notices WHERE id = ? AND status = 1',
             [id]
         );
 
         if (files.length === 0) {
+            console.log('No file found in database for ID:', id);
             return res.status(404).json({ message: 'File not found' });
         }
 
         const file = files[0];
+        console.log('File record found:', file);
+        
         const absolutePath = path.resolve(__dirname, '..', file.file_path);
+        console.log('Resolved absolute path:', absolutePath);
 
         // Check if file exists
         if (!fs.existsSync(absolutePath)) {
+            console.error(`File not found at path: ${absolutePath}`);
             return res.status(404).json({ message: 'File not found on server' });
         }
 
@@ -155,6 +175,8 @@ export const downloadFile = async (req, res) => {
         const safeTitle = file.title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
         const downloadFilename = `${safeTitle}${fileExt}`;
 
+        console.log('Sending file with name:', downloadFilename);
+
         // Set headers for file download
         res.setHeader('Content-Type', file.file_mimetype);
         res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
@@ -162,6 +184,11 @@ export const downloadFile = async (req, res) => {
         // Stream the file
         const fileStream = fs.createReadStream(absolutePath);
         fileStream.pipe(res);
+
+        fileStream.on('error', (error) => {
+            console.error('Error streaming file:', error);
+            res.status(500).json({ message: 'Error streaming file' });
+        });
     } catch (err) {
         console.error('Error downloading file:', err);
         res.status(500).json({ message: 'Server error while downloading file' });

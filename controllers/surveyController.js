@@ -93,33 +93,40 @@ export const serveSurveyFile = async (req, res) => {
         const { id } = req.params;
         console.log('Serving survey file for id:', id);
 
-        const [surveys] = await db.query(
-            'SELECT title, file_path, file_mimetype FROM surveys WHERE id = ? AND status = 1',
-            [id]
-        );
-
-        if (surveys.length === 0) {
-            return res.status(404).json({ message: 'Survey not found' });
+        // Get file details from database
+        const [files] = await db.query('SELECT file_path, file_mimetype FROM surveys WHERE id = ?', [id]);
+        
+        if (files.length === 0) {
+            console.log('No file found in database for id:', id);
+            return res.status(404).json({ message: 'File not found' });
         }
 
-        const survey = surveys[0];
-        const filePath = path.join(__dirname, '..', survey.file_path);
+        const file = files[0];
+        const filePath = path.resolve(__dirname, '..', file.file_path);
+        console.log('Resolved file path:', filePath);
 
         // Check if file exists
         if (!fs.existsSync(filePath)) {
-            console.error(`File not found: ${filePath}`);
+            console.error('File does not exist at path:', filePath);
             return res.status(404).json({ message: 'File not found on server' });
         }
 
-        // Set appropriate headers for viewing
-        res.setHeader('Content-Type', survey.file_mimetype);
-        
-        // Send file for viewing (inline)
-        res.sendFile(filePath);
+        // Set proper headers
+        res.setHeader('Content-Type', file.file_mimetype);
+        res.setHeader('Content-Disposition', `inline; filename="${path.basename(file.file_path)}"`);
+
+        // Stream the file
+        const fileStream = fs.createReadStream(filePath);
+        fileStream.pipe(res);
+
+        fileStream.on('error', (error) => {
+            console.error('Error streaming file:', error);
+            res.status(500).json({ message: 'Error streaming file' });
+        });
 
     } catch (error) {
-        console.error('Error serving survey:', error);
-        res.status(500).json({ message: 'Error serving survey file' });
+        console.error('Error serving survey file:', error);
+        res.status(500).json({ message: 'Internal server error' });
     }
 };
 

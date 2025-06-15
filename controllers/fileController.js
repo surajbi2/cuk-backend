@@ -2,6 +2,7 @@ import db from '../config/db.js';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { getUploadDirectory } from '../config/multerConfig.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -159,8 +160,12 @@ export const downloadFile = async (req, res) => {
 
         const file = files[0];
         console.log('File record found:', file);
+
+        // Use the upload directory from multer config
+        const uploadDir = getUploadDirectory();
+        const fileName = path.basename(file.file_path);
+        const absolutePath = path.join(uploadDir, fileName);
         
-        const absolutePath = path.resolve(__dirname, '..', file.file_path);
         console.log('Resolved absolute path:', absolutePath);
 
         // Check if file exists
@@ -175,7 +180,11 @@ export const downloadFile = async (req, res) => {
         const safeTitle = file.title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
         const downloadFilename = `${safeTitle}${fileExt}`;
 
-        console.log('Sending file with name:', downloadFilename);
+        console.log('Sending file:', {
+            path: absolutePath,
+            filename: downloadFilename,
+            mimetype: file.file_mimetype
+        });
 
         // Set headers for file download
         res.setHeader('Content-Type', file.file_mimetype);

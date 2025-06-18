@@ -179,61 +179,50 @@ export const serveFile = async (req, res) => {
 export const downloadFile = async (req, res) => {
     try {
         const { id } = req.params;
-        console.log('Downloading file for ID:', id);
-          
+        console.log('Download request for notice ID:', id);
+
         // Get file info from database
-        const [files] = await db.query(
-            'SELECT file_name, file_path, file_mimetype, title FROM notices WHERE id = ? AND status = 1',
+        const [notices] = await db.query(
+            'SELECT title, file_name, file_mimetype, file_path FROM notices WHERE id = ? AND status = 1',
             [id]
         );
 
-        if (files.length === 0) {
-            console.log('No file found in database for ID:', id);
-            return res.status(404).json({ message: 'File not found' });
+        if (notices.length === 0) {
+            console.log('No notice found in database for ID:', id);
+            return res.status(404).json({ message: 'Notice not found' });
         }
 
-        const file = files[0];
-        console.log('File record found:', file);
+        const notice = notices[0];
+        console.log('Notice record found:', notice);
 
-        // Use the upload directory from multer config
+        // Get the absolute path
         const uploadDir = getUploadDirectory();
-        const fileName = path.basename(file.file_path);
-        const absolutePath = path.join(uploadDir, fileName);
+        const fileName = path.basename(notice.file_path);
+        const filePath = path.join(uploadDir, fileName);
         
-        console.log('Resolved absolute path:', absolutePath);
+        console.log('Resolved file path:', filePath);
 
         // Check if file exists
-        if (!fs.existsSync(absolutePath)) {
-            console.error(`File not found at path: ${absolutePath}`);
+        if (!fs.existsSync(filePath)) {
+            console.error(`File not found at path: ${filePath}`);
             return res.status(404).json({ message: 'File not found on server' });
         }
 
-        // Get file extension from original filename
-        const fileExt = path.extname(file.file_name);
-        // Create sanitized filename using title
-        const safeTitle = file.title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        const downloadFilename = `${safeTitle}${fileExt}`;
-
-        console.log('Sending file:', {
-            path: absolutePath,
-            filename: downloadFilename,
-            mimetype: file.file_mimetype
-        });
-
         // Set headers for file download
-        res.setHeader('Content-Type', file.file_mimetype);
-        res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
+        res.setHeader('Content-Type', notice.file_mimetype);
+        res.setHeader('Content-Disposition', `attachment; filename="${notice.file_name}"`);
 
         // Stream the file
-        const fileStream = fs.createReadStream(absolutePath);
+        const fileStream = fs.createReadStream(filePath);
         fileStream.pipe(res);
 
         fileStream.on('error', (error) => {
             console.error('Error streaming file:', error);
             res.status(500).json({ message: 'Error streaming file' });
         });
-    } catch (err) {
-        console.error('Error downloading file:', err);
+
+    } catch (error) {
+        console.error('Error downloading file:', error);
         res.status(500).json({ message: 'Server error while downloading file' });
     }
 };

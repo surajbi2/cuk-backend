@@ -124,22 +124,17 @@ export const serveFile = async (req, res) => {
         console.log('\n=== Serve File Request ===');
         console.log('Request Headers:', {
             authorization: req.headers.authorization ? 'present' : 'missing',
-            'x-admin-access': req.headers['x-admin-access'],
             accept: req.headers.accept
         });
         console.log('Notice ID:', id);
 
-        // Check if admin is accessing pending notice
-        const isAdmin = req.headers['x-admin-access'] === 'true';
-        console.log('Is Admin Access:', isAdmin);
-        
-        // First, check if the notice exists at all
-        const [checkNotice] = await db.query(
-            'SELECT id, status FROM notices WHERE id = ?',
+        // Just check if the notice exists, regardless of status
+        const [notices] = await db.query(
+            'SELECT file_name, file_mimetype, file_data, status FROM notices WHERE id = ?',
             [id]
         );
-        
-        if (checkNotice.length === 0) {
+
+        if (notices.length === 0) {
             console.log('Notice not found in database');
             return res.status(404).json({ 
                 message: 'Notice not found',
@@ -147,36 +142,7 @@ export const serveFile = async (req, res) => {
             });
         }
 
-        console.log('Initial notice check:', {
-            id: checkNotice[0].id,
-            status: checkNotice[0].status
-        });
-
-        // Now get the full notice data with appropriate status check
-        const [notices] = await db.query(
-            'SELECT file_name, file_mimetype, file_data, status FROM notices WHERE id = ? AND (status = 1 OR (status = 2 AND ?))',
-            [id, isAdmin]
-        );
-
-        console.log('File query result:', {
-            found: notices.length > 0,
-            status: notices.length ? notices[0].status : 'N/A',
-            isAdminAccess: isAdmin,
-            hasData: notices.length ? !!notices[0].file_data : false
-        });
-
-        if (notices.length === 0) {
-            const errorMessage = isAdmin ? 
-                'File not found' : 
-                'This notice is pending approval';
-            return res.status(404).json({ 
-                message: errorMessage,
-                detail: `Notice status: ${checkNotice[0].status}, Admin access: ${isAdmin}`
-            });
-        }
-
         const notice = notices[0];
-        
         if (!notice.file_data) {
             console.error('File data is missing for notice:', id);
             return res.status(404).json({ 
@@ -188,7 +154,8 @@ export const serveFile = async (req, res) => {
         console.log('Serving file:', {
             fileName: notice.file_name,
             mimeType: notice.file_mimetype,
-            dataSize: notice.file_data.length
+            dataSize: notice.file_data.length,
+            status: notice.status
         });
 
         // Set response headers
@@ -213,43 +180,57 @@ export const serveFile = async (req, res) => {
 export const downloadFile = async (req, res) => {
     try {
         const { id } = req.params;
-        console.log('Download request for notice ID:', id);        // Check if admin is accessing pending notice
-        const isAdmin = req.headers['x-admin-access'] === 'true';
-        
-        // Get file info and data from database
+        console.log('\n=== Download File Request ===');
+        console.log('Request Headers:', {
+            authorization: req.headers.authorization ? 'present' : 'missing',
+            accept: req.headers.accept
+        });
+        console.log('Notice ID:', id);
+
+        // Just check if the notice exists, regardless of status
         const [notices] = await db.query(
-            'SELECT title, file_name, file_mimetype, file_data, status FROM notices WHERE id = ? AND (status = 1 OR (status = 2 AND ?))',
-            [id, isAdmin]
+            'SELECT title, file_name, file_mimetype, file_data, status FROM notices WHERE id = ?',
+            [id]
         );
 
         if (notices.length === 0) {
-            console.log('No notice found in database for ID:', id);
-            return res.status(404).json({ message: 'Notice not found' });
+            console.log('Notice not found in database');
+            return res.status(404).json({ 
+                message: 'Notice not found',
+                detail: 'No notice exists with this ID'
+            });
         }
 
         const notice = notices[0];
-        console.log('Notice record found:', { 
-            title: notice.title, 
-            file_name: notice.file_name, 
-            file_mimetype: notice.file_mimetype 
-        });
-
         if (!notice.file_data) {
-            console.error('No file data found in database');
-            return res.status(404).json({ message: 'File data not found' });
+            console.error('File data is missing for notice:', id);
+            return res.status(404).json({ 
+                message: 'File data not found',
+                detail: 'The file content is missing from the database'
+            });
         }
+
+        console.log('Serving file for download:', {
+            fileName: notice.file_name,
+            mimeType: notice.file_mimetype,
+            dataSize: notice.file_data.length,
+            status: notice.status
+        });
 
         // Set response headers
         res.setHeader('Content-Type', notice.file_mimetype);
         res.setHeader('Content-Disposition', `attachment; filename="${notice.file_name}"`);
-        
-        // Send the file data directly from the database
+
+        // Send file data
         res.send(notice.file_data);
 
     } catch (error) {
-        console.error('Error downloading file:', error);
+        console.error('Error in downloadFile:', error);
         if (!res.headersSent) {
-            res.status(500).json({ message: 'Server error while downloading file' });
+            res.status(500).json({ 
+                message: 'Server error while downloading file',
+                error: error.message
+            });
         }
     }
 };

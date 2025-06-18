@@ -1,6 +1,6 @@
 import db from '../config/db.js';
 import multer from 'multer';
-import { getUploadDirectory } from '../config/multerConfig.js';
+
 // Use memory storage for storing file data in RAM
 const storage = multer.memoryStorage();
 export const upload = multer({ storage });
@@ -22,15 +22,6 @@ export const uploadFile = async (req, res) => {
             hasFile: !!file
         });
         
-        if (file) {
-            console.log('File details:', {
-                originalname: file.originalname,
-                mimetype: file.mimetype,
-                size: file.size,
-                buffer: file.buffer ? `${file.buffer.length} bytes` : 'missing'
-            });
-        }
-
         if (!file) {
             console.error('No file uploaded');
             return res.status(400).json({ message: 'No file uploaded' });
@@ -39,15 +30,16 @@ export const uploadFile = async (req, res) => {
         if (!title || !eventDate) {
             console.error('Missing required fields:', { title, eventDate });
             return res.status(400).json({ message: 'Title and date are required' });
-        }        // Insert record into database with file data        console.log('Attempting database insert with values:', {
-            title,
-            eventDate,
-            fileName: file.originalname,
-            mimeType: file.mimetype,
-            bufferLength: file.buffer ? file.buffer.length : 0,
-            status: 2
+        }
+
+        console.log('File details:', {
+            originalname: file.originalname,
+            mimetype: file.mimetype,
+            size: file.size,
+            buffer: file.buffer ? `${file.buffer.length} bytes` : 'missing'
         });
 
+        console.log('Attempting database insert...');
         const [result] = await db.query(
             `INSERT INTO notices (title, event_date, file_name, file_mimetype, file_data, status) 
              VALUES (?, ?, ?, ?, ?, ?)`, 
@@ -56,8 +48,7 @@ export const uploadFile = async (req, res) => {
 
         console.log('Database insert result:', {
             insertId: result.insertId,
-            affectedRows: result.affectedRows,
-            serverStatus: result.serverStatus
+            affectedRows: result.affectedRows
         });
 
         // Verify the inserted record
@@ -77,12 +68,10 @@ export const uploadFile = async (req, res) => {
                 filename: file.originalname
             }
         });
-    } catch (err) {
-        console.error('Error in uploadFile:', err);
-        res.status(500).json({ 
-            message: 'Server error while processing upload',
-            error: err.message
-        });
+
+    } catch (error) {
+        console.error('Error uploading file:', error);
+        res.status(500).json({ message: 'Server error while uploading file' });
     }
 };
 
@@ -150,17 +139,18 @@ export const serveFile = async (req, res) => {
             [id]
         );
         
-        console.log('Initial notice check:', checkNotice.length ? {
-            id: checkNotice[0].id,
-            status: checkNotice[0].status
-        } : 'No notice found');
-
         if (checkNotice.length === 0) {
+            console.log('Notice not found in database');
             return res.status(404).json({ 
                 message: 'Notice not found',
                 detail: 'No notice exists with this ID'
             });
         }
+
+        console.log('Initial notice check:', {
+            id: checkNotice[0].id,
+            status: checkNotice[0].status
+        });
 
         // Now get the full notice data with appropriate status check
         const [notices] = await db.query(

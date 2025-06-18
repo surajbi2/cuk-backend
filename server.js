@@ -21,8 +21,8 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: 'http://localhost:5173'|| 'https://cuk-frontend.vercel.app' || 'https://iqac.cuk.ac.in', // allow frontend origin explicitly
-  credentials: true                // allow cookies/headers
+  origin: ['http://localhost:5173', 'https://iqac.cuk.ac.in', 'https://cuk-frontend.vercel.app'],
+  credentials: true
 }));
 app.use(express.json());
 

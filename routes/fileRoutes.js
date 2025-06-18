@@ -1,5 +1,4 @@
 import express from 'express';
-import { upload, multerErrorHandler } from '../config/multerConfig.js';
 import {
     uploadFile,
     getNotices,
@@ -7,7 +6,8 @@ import {
     deleteNotice,
     serveFile,
     approveNotice,
-    downloadFile
+    downloadFile,
+    upload
 } from '../controllers/fileController.js';
 
 const router = express.Router();
@@ -15,20 +15,8 @@ const router = express.Router();
 // Explicit download route - needs to be before other /notices routes
 router.get('/notices/download/:id', downloadFile);
 
-// File upload route with error handling
-router.post('/upload', (req, res, next) => {
-    upload.single('file')(req, res, (err) => {
-        if (err) {
-            console.error('Upload error:', err);
-            return res.status(500).json({ 
-                message: 'Upload failed', 
-                error: err.message,
-                path: err.path
-            });
-        }
-        next();
-    });
-}, uploadFile);
+// File upload route
+router.post('/upload', upload.single('file'), uploadFile);
 
 // Get approved notices
 router.get('/notices', getNotices);
@@ -46,6 +34,12 @@ router.get('/file/:id', serveFile);
 router.put('/notices/approve/:id', approveNotice);
 
 // Error handling middleware
-router.use(multerErrorHandler);
+router.use((err, req, res, next) => {
+    console.error('Route error:', err);
+    res.status(500).json({ 
+        message: 'Server error while processing upload',
+        error: err.message
+    });
+});
 
 export default router;

@@ -1,11 +1,9 @@
 import db from '../config/db.js';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
-import { getUploadDirectory } from '../config/multerConfig.js';
+import multer from 'multer';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Use memory storage for storing file data in RAM
+const storage = multer.memoryStorage();
+export const upload = multer({ storage });
 
 export const uploadFile = async (req, res) => {
     try {
@@ -34,38 +32,11 @@ export const uploadFile = async (req, res) => {
         if (!title || !eventDate) {
             console.error('Missing required fields:', { title, eventDate });
             return res.status(400).json({ message: 'Title and date are required' });
-        }
-
-        // Store the relative path to avoid full system path exposure
-        const uploadDir = getUploadDirectory();
-        const relativePath = path.join('uploads', file.filename);
-        const absolutePath = path.join(uploadDir, file.filename);
-        
-        console.log('File paths:', {
-            uploadDir,
-            relativePath,
-            absolutePath,
-            exists: fs.existsSync(absolutePath)
-        });
-
-        // Verify file was created
-        if (!fs.existsSync(absolutePath)) {
-            console.error('File not saved correctly at:', absolutePath);
-            return res.status(500).json({ 
-                message: 'Failed to save file',
-                details: {
-                    path: absolutePath,
-                    uploadDir,
-                    relativePath
-                }
-            });
-        }
-
-        // Insert record into database
+        }        // Insert record into database with file data
         const [result] = await db.query(
-            `INSERT INTO notices (title, event_date, file_name, file_mimetype, file_path, status) 
+            `INSERT INTO notices (title, event_date, file_name, file_mimetype, file_data, status) 
              VALUES (?, ?, ?, ?, ?, ?)`, 
-            [title, eventDate, file.originalname, file.mimetype, relativePath, 2]
+            [title, eventDate, file.originalname, file.mimetype, file.buffer, 2]
         );
 
         console.log('Database insert result:', result);
@@ -136,9 +107,9 @@ export const serveFile = async (req, res) => {
         const { id } = req.params;
         console.log('Serving file for notice ID:', id);
 
-        // Get file info from database
+        // Get file info and data from database
         const [notices] = await db.query(
-            'SELECT file_name, file_mimetype, file_path FROM notices WHERE id = ? AND status = 1',
+            'SELECT file_name, file_mimetype, file_data FROM notices WHERE id = ? AND status = 1',
             [id]
         );
 
@@ -148,35 +119,14 @@ export const serveFile = async (req, res) => {
         }
 
         const notice = notices[0];
-        console.log('Notice record found:', notice);
-
-        // Get the absolute path
-        const uploadDir = getUploadDirectory();
-        const fileName = path.basename(notice.file_path);
-        const filePath = path.join(uploadDir, fileName);
-        
-        console.log('Resolved file path:', filePath);
-
-        // Check if file exists
-        if (!fs.existsSync(filePath)) {
-            console.error(`File not found at path: ${filePath}`);
-            return res.status(404).json({ message: 'File not found on server' });
-        }
+        console.log('Notice record found:', { filename: notice.file_name, mimetype: notice.file_mimetype });
 
         // Set response headers
         res.setHeader('Content-Type', notice.file_mimetype);
         res.setHeader('Content-Disposition', `inline; filename="${notice.file_name}"`);
 
-        // Stream the file
-        const fileStream = fs.createReadStream(filePath);
-        fileStream.pipe(res);
-
-        fileStream.on('error', (error) => {
-            console.error('Error streaming file:', error);
-            if (!res.headersSent) {
-                res.status(500).json({ message: 'Error streaming file' });
-            }
-        });
+        // Send file data directly from database
+        res.send(notice.file_data);
 
     } catch (error) {
         console.error('Error serving file:', error);

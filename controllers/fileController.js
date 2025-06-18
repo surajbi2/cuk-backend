@@ -105,12 +105,13 @@ export const deleteNotice = async (req, res) => {
 export const serveFile = async (req, res) => {
     try {
         const { id } = req.params;
-        console.log('Serving file for notice ID:', id);
-
+        console.log('Serving file for notice ID:', id);        // Check if admin is accessing pending notice
+        const isAdmin = req.headers['x-admin-access'] === 'true';
+        
         // Get file info and data from database
         const [notices] = await db.query(
-            'SELECT file_name, file_mimetype, file_data FROM notices WHERE id = ? AND status = 1',
-            [id]
+            'SELECT file_name, file_mimetype, file_data, status FROM notices WHERE id = ? AND (status = 1 OR (status = 2 AND ?))',
+            [id, isAdmin]
         );
 
         if (notices.length === 0) {
@@ -140,12 +141,13 @@ export const serveFile = async (req, res) => {
 export const downloadFile = async (req, res) => {
     try {
         const { id } = req.params;
-        console.log('Download request for notice ID:', id);
-
+        console.log('Download request for notice ID:', id);        // Check if admin is accessing pending notice
+        const isAdmin = req.headers['x-admin-access'] === 'true';
+        
         // Get file info and data from database
         const [notices] = await db.query(
-            'SELECT title, file_name, file_mimetype, file_data FROM notices WHERE id = ? AND status = 1',
-            [id]
+            'SELECT title, file_name, file_mimetype, file_data, status FROM notices WHERE id = ? AND (status = 1 OR (status = 2 AND ?))',
+            [id, isAdmin]
         );
 
         if (notices.length === 0) {

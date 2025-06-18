@@ -1,6 +1,6 @@
 import db from '../config/db.js';
 import multer from 'multer';
-
+import { getUploadDirectory } from '../config/multerConfig.js';
 // Use memory storage for storing file data in RAM
 const storage = multer.memoryStorage();
 export const upload = multer({ storage });
@@ -142,9 +142,9 @@ export const downloadFile = async (req, res) => {
         const { id } = req.params;
         console.log('Download request for notice ID:', id);
 
-        // Get file info from database
+        // Get file info and data from database
         const [notices] = await db.query(
-            'SELECT title, file_name, file_mimetype, file_path FROM notices WHERE id = ? AND status = 1',
+            'SELECT title, file_name, file_mimetype, file_data FROM notices WHERE id = ? AND status = 1',
             [id]
         );
 
@@ -154,37 +154,29 @@ export const downloadFile = async (req, res) => {
         }
 
         const notice = notices[0];
-        console.log('Notice record found:', notice);
+        console.log('Notice record found:', { 
+            title: notice.title, 
+            file_name: notice.file_name, 
+            file_mimetype: notice.file_mimetype 
+        });
 
-        // Get the absolute path
-        const uploadDir = getUploadDirectory();
-        const fileName = path.basename(notice.file_path);
-        const filePath = path.join(uploadDir, fileName);
-        
-        console.log('Resolved file path:', filePath);
-
-        // Check if file exists
-        if (!fs.existsSync(filePath)) {
-            console.error(`File not found at path: ${filePath}`);
-            return res.status(404).json({ message: 'File not found on server' });
+        if (!notice.file_data) {
+            console.error('No file data found in database');
+            return res.status(404).json({ message: 'File data not found' });
         }
 
-        // Set headers for file download
+        // Set response headers
         res.setHeader('Content-Type', notice.file_mimetype);
         res.setHeader('Content-Disposition', `attachment; filename="${notice.file_name}"`);
-
-        // Stream the file
-        const fileStream = fs.createReadStream(filePath);
-        fileStream.pipe(res);
-
-        fileStream.on('error', (error) => {
-            console.error('Error streaming file:', error);
-            res.status(500).json({ message: 'Error streaming file' });
-        });
+        
+        // Send the file data directly from the database
+        res.send(notice.file_data);
 
     } catch (error) {
         console.error('Error downloading file:', error);
-        res.status(500).json({ message: 'Server error while downloading file' });
+        if (!res.headersSent) {
+            res.status(500).json({ message: 'Server error while downloading file' });
+        }
     }
 };
 

@@ -20,7 +20,10 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:5173'|| 'https://cuk-frontend.vercel.app' || 'https://iqac.cuk.ac.in', // allow frontend origin explicitly
+  credentials: true                // allow cookies/headers
+}));
 app.use(express.json());
 
 // Debug middleware for all requests
